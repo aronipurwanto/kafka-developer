@@ -1,0 +1,14 @@
+Day 1.
+- Introduction to Event Streaming Concept
+- Developing Kafka Producer
+- Developing Kafka Consumer
+
+Day 2.
+- Introduction to Kafka Streams API For Real Time Processing
+- Working with serialization format: JSON, AVRO, Protobuf
+- Error Handling strategi in Kafka Application.
+
+Day 3.
+- Building microservice using kafka
+- Testing Kafka Application
+- Best Practice for kafka-base Development.
