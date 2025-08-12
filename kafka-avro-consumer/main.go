@@ -1,0 +1,1 @@
+package kafka_avro_consumer
