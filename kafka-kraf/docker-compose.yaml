@@ -1,27 +1,26 @@
 # docker-compose.yml
 version: "3.8"
 
+# Base ENV untuk semua broker
+x-kafka-env: &kafka-env
+  KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  # Bind di dalam container
+  KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  KAFKA_DELETE_TOPIC_ENABLE: "true"
+  KAFKA_NUM_PARTITIONS: 3
+
+# Konfigurasi umum broker
 x-kafka-common: &kafka-common
   image: confluentinc/cp-kafka:7.5.0
   restart: unless-stopped
-  environment:
-    KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-    # Listener internal untuk antar-broker & klien dalam jaringan docker
-    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-    # Listener yang diiklankan (internal & host)
-    # NOTE: untuk Mac/Windows kadang perlu host.docker.internal
-    # ganti "localhost" dengan IP host jika diakses dari mesin lain
-    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://{HOSTNAME}:29092,PLAINTEXT_HOST://localhost:{HOSTPORT}
-    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-    KAFKA_MIN_INSYNC_REPLICAS: 2
-    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-    KAFKA_DELETE_TOPIC_ENABLE: "true"
-    KAFKA_NUM_PARTITIONS: 3
   healthcheck:
     test: ["CMD", "bash", "-c", "kafka-broker-api-versions --bootstrap-server localhost:29092 || exit 1"]
     interval: 10s
@@ -61,11 +60,12 @@ services:
     hostname: kafka1
     container_name: kafka1
     ports:
-      - "9092:9092"
-      - "9991:9991"
+      - "9092:9092"   # host:container untuk listener HOST
+      - "9991:9991"   # JMX
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_BROKER_ID: 1
+      # Advertised untuk internal (cluster) & host (client di luar docker)
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_JMX_PORT: 9991
       KAFKA_JMX_HOSTNAME: kafka1
@@ -83,7 +83,7 @@ services:
       - "9093:9092"
       - "9992:9992"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_BROKER_ID: 2
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092,PLAINTEXT_HOST://localhost:9093
       KAFKA_JMX_PORT: 9992
@@ -102,7 +102,7 @@ services:
       - "9094:9092"
       - "9993:9993"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_BROKER_ID: 3
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:29092,PLAINTEXT_HOST://localhost:9094
       KAFKA_JMX_PORT: 9993
@@ -121,7 +121,7 @@ services:
       - "9095:9092"
       - "9994:9994"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_BROKER_ID: 4
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka4:29092,PLAINTEXT_HOST://localhost:9095
       KAFKA_JMX_PORT: 9994
@@ -140,7 +140,7 @@ services:
       - "9096:9092"
       - "9995:9995"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_BROKER_ID: 5
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka5:29092,PLAINTEXT_HOST://localhost:9096
       KAFKA_JMX_PORT: 9995
@@ -150,6 +150,27 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+
+  # (Opsional) Schema Registry – cocok dengan kode Avro/Protobuf Anda
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: schema-registry
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:29092,PLAINTEXT://kafka2:29092,PLAINTEXT://kafka3:29092
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+    networks:
+      - kafka-net
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
@@ -161,7 +182,7 @@ services:
       KAFKA_CLUSTERS_0_NAME: "My Local Kafka Cluster"
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:29092,kafka2:29092,kafka3:29092,kafka4:29092,kafka5:29092"
       KAFKA_CLUSTERS_0_ZOOKEEPER: "zookeeper:2181"
-      # (Opsional) aktifkan metrics via JMX; Kafka UI bisa scrape dari tiap broker
+      # JMX opsional (cukup salah satu broker)
       KAFKA_CLUSTERS_0_JMXPORT: "9991"
       KAFKA_CLUSTERS_0_JMXHOSTNAME: "kafka1"
     depends_on:
