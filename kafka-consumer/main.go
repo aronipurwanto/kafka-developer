@@ -19,7 +19,7 @@ func main() {
 	}
 	defer consumer.Close()
 
-	err = consumer.Subscribe("helloworld", nil)
+	err = consumer.Subscribe("order", nil)
 	if err != nil {
 		panic(err)
 	}
